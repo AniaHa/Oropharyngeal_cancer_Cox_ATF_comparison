@@ -1,0 +1,524 @@
+---
+title: "Projekt nr 5"
+author: "Anna Herud"
+date: "10 06 2021"
+output: 
+  prettydoc::html_pretty:
+    theme: leonids
+    highlight: github
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+```
+
+```{r, include=FALSE}
+dane <- read.csv("E:/Studia/PW/II SEMESTR/Biostatystyka/projekty/Proj 5/pharynx.csv")
+library(survminer)
+library(foreign)
+library(survival)
+library(KMsurv)
+library(survMisc)
+```
+# Goal of the project
+
+The objective of the project is to analyze data from patients diagnosed with cancer of the oropharynx, comparing the survival time of patients treated with radiotherapy alone versus those treated with a combination of radiotherapy and chemotherapy. The project will examine the impact of various variables on patient survival time and will fit both the Cox proportional hazards model and the ATF model.
+
+# Preliminary analysis of the dataset 
+
+The data used in the project consists of 195 observations. The variable of interest is the variable `TIME`, which represents the survival time of the patient from the moment of diagnosis. The shortest survival time is 11 days, and the median survival time, estimated using the Kaplan-Meier estimator, is 461 days. This is the shortest observed event time for which `S(t) < 50%`.
+
+
+```{r, include=TRUE, warning=FALSE, message=FALSE}
+print(paste0("Shortest survival time: ", min(dane$TIME)))
+```
+
+```{r, include=TRUE, warning=FALSE, message=FALSE}
+result <- survfit(Surv(TIME, STATUS)~1, data = dane)
+print(surv_median(result))
+```
+The variable `STATUS` in our dataset is an indicator of censored times. Patients who have not died during the observation period are considered as censored observations. Approximately $27\%$ of the data consists of censored observations.
+
+
+```{r, include = TRUE, warning=FALSE, message=FALSE}
+print(paste0("Uncensored: ", round(sum(dane$STATUS==1) / nrow(dane)*100, 2), "%"))
+print(paste0("Censored: ", round(sum(dane$STATUS==0) / nrow(dane)*100, 2), "%"))
+```
+
+The variables whose impact on the survival time of patients with cancer will be considered are:
+
+* `SEX`: patient gender (approximately $76\%$ male and $24\%$ female)
+* `GRADE`: tumor differentiation grade (1 observation without data, for the rest: approximately $26\%$ of patients with high tumor differentiation, approximately $56\%$ with medium differentiation, and approximately $18\%$ with low differentiation)
+* `TX`: treatment (approximately $51\%$ of patients received radiotherapy, and $49\%$ received both radiotherapy and chemotherapy)
+* `AGE`: age in years at the time of diagnosis
+* `COND`: patient performance status (2 observations without data, for the rest: approximately $74\%$ of patients have no performance limitation, approximately $22\%$ have limited work performance, approximately $3\%$ require partial care, and 1 patient requires full care)
+* `SITE`: tumor location (in approximately $33\%$ of patients, the tumor is located on the palatal arch, similarly for the tonsillar fossa location, approximately $34\%$ of patients have a tumor at the base of the tongue)
+* `T_STAGE`: tumor size (approximately $5\%$ of patients have a tumor of $2$ cm or less, approximately $13\%$ have a tumor size of $2-4$ cm, approximately $48\%$ have a tumor larger than $4$ cm, and approximately $23\%$ of patients have a massive tumor with surrounding tissue invasion)
+* `N_STAGE`: lymph node metastasis ($20\%$ of patients have no metastasis, approximately $14\%$ have one affected node smaller than $3$ cm - mobile, approximately $19\%$ have one affected node larger than $3$ cm - mobile, approximately $47\%$ of patients have multiple affected nodes)
+
+
+Observations with missing data in the `GRADE` and `COND` variables will be removed.
+
+```{r, include=TRUE, warning=FALSE, message=FALSE}
+del1 <- which(dane$GRADE==9)
+del2 <- which(dane$COND==9)
+dane2 <- dane[-c(del1, del2),]
+```
+
+# Effect of selected variables on the survival function
+
+In the first part, the impact of the variables `SEX`, `N_STAGE`, and `T_STAGE` on the patient's survival probability will be examined.
+
+### Effect of gender on probability of survival
+
+First, the variable `SEX`, consisting of two levels, will be examined. The survival probability function for each gender separately is shown in the plot below:
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+result.s <- survfit(Surv(TIME, STATUS)~SEX, data = dane)
+
+ggsurvplot(
+  result.s,
+  data = dane2,
+  xlab = "Days",
+  ylab = "Overall survival probability",
+  legend.title = "Sex",
+  conf.int = TRUE,
+  legend.labs = c("Man", "Woman"))
+```
+
+The plot shows that the confidence intervals for the survival curves overlap, and the curves themselves are quite close to each other, particularly for shorter and medium survival times. The curves intersect at the beginning and end of the plot. Therefore, to check if the survival probabilities for men and women differ significantly, we will apply the Reni test using weights $W(t) = 1$. We will test the following hypothesis:
+
+
+$H_0: \lambda_{1}(t)=\lambda_{2}(t)$
+
+$H_1:\lambda_{1}(t)\neq \lambda_{2}(t)$
+
+where $\lambda_{1}(t)$ is the hazard function for women, and $\lambda_{2}(t)$ is the hazard function for men.
+
+```{r, include=FALSE, warning=FALSE, message=FALSE}
+t1 <- ten(Surv(TIME, STATUS)~SEX, data = dane2)
+comp(t1)
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, results='asis'}
+q <- attributes(t1)$sup[1,]$Q
+print(paste0("Test P-value: ", round(2*(1-pnorm(q)), 5)))
+```
+
+We obtained a large p-value, so we do not reject the null hypothesis and further we will consider the variable `SEX` having no impact on the survival probability.
+
+
+
+### Effect of tumour size on probability of survival
+
+Next, we are considering the variable `T_STAGE`, containing the information about the tumor size, and consisting of 4 levels. When plotting the survival probability function for the 4 levels, the curve for the first level (tumor size smaller than 2 cm) intersects with the other curves and appears somewhat unintuitive. The variable `T_STAGE` for level $1$ contains only $5\%$ of the observations. Observations from this level will be combined with those from the second level, to create a more comprehensive plot.
+
+The survival probability plot for each tumor size category is shown below:
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+result.t <- survfit(Surv(TIME, STATUS)~T_STAGE, data = dane2)
+
+ggsurvplot(
+  result.t,
+  data = dane2,
+  xlab = "Days",
+  ylab = "Overall survival probability",
+  legend.title = "T_STAGE",
+  title = "T_STAGE variable (4 levels)",
+  conf.int = TRUE,
+  legend.labs = c("< 2 cm", "> 2 cm & < 4 cm", "> 4 cm", "massive tumor"))
+```
+
+```{r, include=FALSE}
+dane3 <- dane2
+dane3$T_STAGE[which(dane2$T_STAGE == 1)] <- 2
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+result.t <- survfit(Surv(TIME, STATUS)~T_STAGE, data = dane3)
+
+ggsurvplot(
+  result.t,
+  data = dane3,
+  xlab = "Days",
+  ylab = "Overall survival probability",
+  legend.title = "T_STAGE",
+  title = "T_STAGE variable (3 levels)",
+  conf.int = TRUE,
+  legend.labs = c("< 4 cm", "> 4 cm", "massive tumor"))
+```
+
+The confidence intervals for the survival functions overlap, and the lines are close to each other. However, it is difficult to determine solely from the plot whether tumor size affects survival probability. To verify this hypothesis, a trend test will be conducted. The hypothesis being tested is:
+
+$H_0: \lambda_{1}(t)=\lambda_{2}(t) = \lambda_{3}(t)$
+
+$H_1:\lambda_{1}(t)\leq \lambda_{3}(t) \leq \lambda_{4}(t)$.
+
+$\lambda_{i}$ represents the hazard function for the $i$-th category, where $i=2, 3, 4$.
+
+
+```{r, include=FALSE, warning=FALSE, message=FALSE}
+survdiff(Surv(TIME, STATUS)~T_STAGE, data = dane3)
+t2 <- ten(Surv(TIME, STATUS)~T_STAGE, data = dane3)
+comp(t2)
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, results='asis'}
+z <- attributes(t2)$tft$tft[1,]$Z
+print(paste0("Test P-value: ", round(2*(pnorm(z)), 5)))
+```
+
+A small p-value rejects the null hypothesis. The variable `T_STAGE` does have an impact on the survival probability. Specifically, for smaller tumors, there is a higher probability of survival. Since we know that the variable `T_STAGE` affects survival time, we will also examine the impact of the variable `TX`, i.e., the type of treatment, on survival time within each stratum of the `T_STAGE` variable.
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, results='asis'}
+s2 <- survdiff(Surv(TIME, STATUS) ~ strata(T_STAGE) + TX, data = dane3)
+print(paste0("Test P-value: ", round(pchisq(s2$chisq, length(s2$n)-1, lower.tail = FALSE), 4)))
+```
+
+A large p-value indicates that there are no significant differences in survival time based on the use of different types of therapy for various tumor sizes.
+
+
+### Impact of lymph node metastasis on survival probability
+
+After plotting the survival functions for the four levels of the variable `N_STAGE`, it was found that the curves for levels $2$ and $3$ are very close to each other. Both of these categories also contain few observations, so they will be combined into one category.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+result.n <- survfit(Surv(TIME, STATUS)~N_STAGE, data = dane3)
+
+ggsurvplot(
+  result.n,
+  data = dane3,
+  xlab = "Days",
+  ylab = "Overall survival probability",
+  title = "N_STAGE variable (4 levels)",
+  legend.title = "N_STAGE",
+  conf.int = TRUE,
+  legend.labs = c( "0 nods", "1 nod", "2 nodes", "more nodes"))
+```
+
+```{r, include=FALSE}
+dane4 <- dane3
+dane4$N_STAGE[which(dane3$N_STAGE == 1)] <- 2
+```
+
+Survival functions for the three levels created:
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+result.n <- survfit(Surv(TIME, STATUS)~N_STAGE, data = dane4)
+
+ggsurvplot(
+  result.n,
+  data = dane4,
+  xlab = "Days",
+  ylab = "Overall survival probability",
+  title = "N_STAGE variable (3 levels)",
+  legend.title = "N_STAGE",
+  conf.int = TRUE,
+  legend.labs = c("0 nods", "1 nod", "more nods"))
+```
+
+Looking at the plot, it appears that the number of metastatic nodes affects the survival probability, particularly that patients with 1 metastatic node have a higher probability of survival than the other patients. To confirm this intuition, a log-rank test will be conducted:
+
+
+$H_0:\lambda_{1}(t)=\dots=\lambda_{k}(t)$ 
+
+$H_1:\lambda_{i}(t)\neq\lambda_{j}(t)$
+
+for some $i$, $j \in \{0, 2, 3\}$ .
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, results='asis'}
+s <- survdiff(Surv(TIME, STATUS)~N_STAGE, data = dane4)
+print(paste0("P-value: ", round(pchisq(s$chisq, length(s$n)-1, lower.tail = FALSE), 5)))
+```
+
+A small p-value rejects the null hypothesis of equal survival probabilities for each level of the variable `N_STAGE`. Similar to the previous variable, we will check whether, after stratification, differences in the effect of treatment choice on survival probability can be observed for different numbers of metastatic nodes.
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, results='asis'}
+s3 <- survdiff(Surv(TIME, STATUS) ~ strata(N_STAGE) + TX, data = dane4)
+print(paste0("P-value testu: ", round(pchisq(s3$chisq, length(s3$n)-1, lower.tail = FALSE), 5)))
+```
+
+Similar to the case of the variable `T_STAGE`, there seem to be no significant differences in the impact of the type of therapy on survival time across different groups of patients with varying numbers of metastatic lymph nodes.
+
+
+# Cox proportional hazards model
+
+A Cox proportional hazards model will be fitted to further analyse the effect of variables on patient survival time. 
+
+### Selection of variables 
+
+Before fitting the full model with all explanatory variables, one level of the `COND` variable will be removed. For `COND = 4`, there is only one observation. It will be classified into class $3$, and individuals requiring partial or full care will now be labeled the same.
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, results='hide'}
+dane5 <- dane4
+dane5$COND[which(dane4$COND == 4)] <- 3
+dane5$SEX <- as.factor(dane5$SEX)
+dane5$TX <- as.factor(dane5$TX)
+dane5$GRADE <- as.factor(dane5$GRADE)
+dane5$COND <- as.factor(dane5$COND)
+dane5$SITE <- as.factor(dane5$SITE)
+dane5$T_STAGE <- as.factor(dane5$T_STAGE)
+dane5$N_STAGE <- as.factor(dane5$N_STAGE)
+dane5 <- within(dane5, rm(CASE, INST))
+cox.full <- coxph(Surv(TIME, STATUS)~ ., data = dane5)
+kable(summary(cox.full)$coef)
+```
+According to the Wald test, in the full model most variables result as not statistically significant. Variable selection will be performed using the AIC criterion.
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, results='hide'}
+result.step <- step(cox.full, data = dane5)
+```
+
+The fitted model includes the following variables:
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, results='asis'}
+kable(summary(result.step)$coef)
+```
+
+The selected variables are: `SEX`, `COND` and `T_STAGE`. 
+
+### Diagnostics
+
+Let us now turn to the diagnostics of our model. A key assumption of our model is the proportionality of the hazards The first tool used to test this assumption will be a deviance residue plot. 
+
+```{r, include = TRUE,  warning=FALSE, message=FALSE}
+plot(predict(result.step),residuals(result.step, type="deviance"), ylab="Deviance Residual", main="Deviance Residuals Plot", xlab="Predictor")
+abline(h=0)
+lines(smooth.spline(predict(result.step),residuals(result.step, type="deviance")),lwd=2,col="orange")
+```
+
+In the model where the proportional hazards assumption is satisfied, the function plot is a line close to zero. In the plot, the line deviates slightly from zero. Its deviation or shape may suggest the inclusion of a time-dependent relationship in the model. In our case, all selected variables are categorical, so we will not analyze the diagnostic plots in this regard. For the same reason, the Schoenfeld residuals diagnostics, which examine the independence of residuals (and thus continuous variables) from time, will be omitted.
+
+A formal Schoenfeld test will be conducted to examine the fulfillment of the proportional hazards assumption for each variable in the model.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+cox.test <- cox.zph(result.step)
+print(cox.test)
+```
+
+The p-value result of the test indicates that the proportional hazards assumption is not satisfied. The main issue occurs with the `COND` variable. 
+
+Before exploring solutions to the problem, the dfbeta residuals plot will be analyzed to detect any influential observations:
+
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+ggcoxdiagnostics(result.step, type = "dfbeta",
+                 linear.predictions = FALSE, ggtheme = theme_bw(), sline.se = FALSE, sline = FALSE, hline.col = "darkorange")
+```
+
+The plot does not seem to indicate any observations that can be clearly classified as influential.
+
+To identify outlying observations, we will use the deviance residuals plot:
+
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+ggcoxdiagnostics(result.step, type = "deviance",
+                 linear.predictions = FALSE, ggtheme = theme_bw(), sline.se = FALSE, sline = FALSE, hline.col = "darkorange")
+```
+
+The residuals are evenly distributed around zero, and none of the observations clearly stand out as outliers. Therefore, we assume that there are no observations that should be removed as outliers.
+
+To address the issue of the proportional hazards assumption not being satisfied, we will attempt to resolve it by stratifying with respect to the `COND` variable, as it had the worst result according to the Schoenfeld test. Below is a plot showing the cumulative hazard function for each level of `COND` (the proportional hazards model is also a model of proportional cumulative hazards). The curves intersect, and the plot also suggests that the proportional hazards assumption is not satisfied for the `COND` variable.
+
+
+```{r, include=FALSE, warning=FALSE, message=FALSE, results='asis'}
+model_strata <- coxph(Surv(TIME, STATUS) ~ SEX + T_STAGE + strata(COND), data = dane5)
+
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(wesanderson)
+library("RColorBrewer")
+plot(survfit(model_strata, newdata = data.frame(SEX=as.factor(rep(2,2)),
+T_STAGE=as.factor(rep(2,2)))),
+fun="cumhaz", col =wes_palette(n=3, name="BottleRocket2"), main= "Estimated Cumulative Hazard Function", xlab = 'Days', ylab = 'Cumulative Hazard', lty = 1:3)
+legend("topright", legend=c("COND = 1", "COND = 2", "COND = 3"), col = wes_palette(n=3, name="GrandBudapest1"), lty = 1:3)
+
+```
+
+We will attempt to fit the model with the same variables, but stratifying according to the `COND` variable.
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, results='asis'}
+model_strata <- coxph(Surv(TIME, STATUS) ~ SEX + T_STAGE + strata(COND), data = dane5)
+
+kable(summary(model_strata)$coef)
+```
+
+
+According to the Wald test, both variables `T_STAGE` and `SEX` remain significant after stratification. We will check whether the proportional hazards assumption is satisfied for this newly fitted model, again using the Schoenfeld test:
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+cox.test2 <- cox.zph(model_strata)
+print(cox.test2)
+```
+
+Large p-values do not reject the null hypothesis of the proportional hazards assumption being satisfied for each variable.
+
+For the newly fitted model, diagnostics were also conducted to detect potential outlying or influential observations, but none were found.
+
+```{r, include = FALSE, message=FALSE, warning=FALSE}
+ggcoxdiagnostics(model_strata, type = "dfbeta",
+                 linear.predictions = FALSE, ggtheme = theme_bw(), sline.se = FALSE, sline = FALSE, hline.col = "darkorange")
+```
+
+The final form of the model is: 
+$$
+\lambda(t) = \lambda_{i}(t)\cdot \exp(-0.356 \cdot X_{sex2} - 0.045 \cdot X_{t_stage3} + 0.553 \cdot X_{t_stage4})
+$$
+for $i = 1, 2, 3$, where $\lambda_{i}(t)$ is the baseline hazard for the $i$-th level of the `COND` variable.
+
+
+# AFT Model
+
+In the final stage of the analysis, an accelerated failure time (AFT) model will be fitted to the data.
+
+### Model fitting
+
+Firstly, a generalized gamma distribution was fitted to the data to check whether any distribution from this family would be appropriate for our data. Variable selection is performed using the AIC criterion. The selected variables are: `T_STAGE`, `SEX`, and `COND`, which are the same variables as in the Cox model.
+ 
+
+```{r, include = FALSE}
+library(flexsurv)
+fit_gengam <- flexsurvreg(Surv(TIME, STATUS)~ T_STAGE + SEX + COND, data = dane5, dist = "gengamma")
+```
+
+We check the confidence interval for the parameter $Q$ to determine if it contains $1$ (Weibull distribution) or $0$ (log-normal distribution).
+ 
+```{r, echo=FALSE, warning=FALSE, message=FALSE, result = 'asis'}
+kable(confint(fit_gengam)[3,])
+```
+
+The interval does not contain either $1$ or $0$. For confirmation, the Weibull distribution was also fitted separately, as it is the most popular distribution for AFT models. However, diagnostic plots confirm a poor fit of the distribution to the data.
+
+
+```{r, include=FALSE}
+fit_weib <- survreg(Surv(TIME, STATUS)~., data = dane5, dist = "weibull")
+fit_weib2 <- step(fit_weib, data = dane5)
+```
+
+Below is a graph showing the Kaplan-Meier estimator calculated from the residuals and the fitted Weibull distribution. 
+
+```{r echo = FALSE,  warning=FALSE, message=FALSE}
+
+fitted_values <- fit_weib2$linear.predictors
+resids <- (log(fit_weib2$y[, 1]) - fitted_values) / fit_weib2$scale
+resKM <- survfit(Surv(resids, STATUS) ~ 1, data = dane5)
+plot(resKM, mark.time = FALSE, xlab = "AFT Residuals", ylab = "Survival Probability")
+xx <- seq(min(resids), max(resids), length.out = 35)
+yy <- exp(- exp(xx))
+lines(xx, yy, col = "darkorange", lwd = 2)
+legend("bottomleft", c("KM estimate", "95% CI KM estimate", 
+                       "Survival function of Extreme Value distribution"), 
+       lty = c(1,2,1), col = c(1,1,2), bty = "n")
+
+```
+
+The graph suggests that the Weibull distribution is not a good choice for our data. The red curve corresponding to the distribution is not within the confidence intervals of the KM estimator. 
+
+### AFT model for log-logistic distribution
+
+Let's attempt to fit a model for the log-logistic distribution. Variable selection is again performed using the AIC criterion. The selected variables are: `COND`, `T_STAGE`, and `N_STAGE`.
+
+
+```{r include = FALSE}
+fit_loglog <- survreg(Surv(TIME, STATUS) ~., data = dane5, dist = "loglogistic")
+fit_loglog2 <- step(fit_loglog, data = dane5)
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, results='asis'}
+kable(summary(fit_loglog2)$coef)
+```
+
+In the plot on the left, the Cox-Snell residuals do not indicate any major issues with the fit. Only a few observations in the upper part of the plot deviate from the line. On the right, we have the Kaplan-Meier estimator plot for the residuals fitted with the log-logistic distribution. This plot shows a much better fit compared to the Weibull distribution.
+
+
+```{r echo = FALSE,  warning=FALSE, message=FALSE}
+par(mfrow = c(1, 2))
+eps<-(log(dane5$TIME)-fit_loglog2$linear.predictors)/fit_loglog2$scale
+rCS<- -log(1/(1+exp(eps)))
+rr<-survfit(Surv(rCS, dane5$STATUS)~ 1)
+plot(unique(sort(rCS)),-log(rr$surv), xlab = 'Cox-Snell Residuals') #estymator Kaplana meiera
+lines(sort(rCS),sort(rCS), col = 'darkorange')
+
+fitted_values <- fit_loglog2$linear.predictors
+resids <- (log(fit_loglog2$y[, 1]) - fitted_values) / fit_loglog2$scale
+resKM <- survfit(Surv(resids, STATUS) ~ 1, data = dane5)
+plot(resKM, mark.time = FALSE, xlab = "AFT Residuals", ylab = "Survival Probability")
+xx <- seq(min(resids), max(resids), length.out = 35)
+yy <- plogis(xx, lower.tail = FALSE)
+lines(xx, yy, col = "darkorange", lwd = 2)
+legend("bottomleft", c("KM estimate", "95% CI KM estimate", 
+                       "Survival function of Extreme Value distribution"), 
+       lty = c(1,2,1), col = c(1,1,2), bty = "n")
+```
+
+
+### Outlier and influential observations
+
+Now, we will analyze the deviance residuals plot to check for any outlying observations. The plot did not reveal any deviations from the norm, and the residuals were evenly distributed around the line y = 0.
+
+
+```{r, include=FALSE, warning=FALSE, message=FALSE}
+plot(sort(dane5$TIME),residuals(fit_loglog2, type="deviance"))
+abline(h=0,col="red")
+```
+
+We also analyse graphs for dfbeta-type residuals to detect influential observations:
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+par(mfrow = c(2,3))
+for(i in 2:7){
+  plot(sort(dane5$TIME),residuals(fit_loglog2, type="dfbetas")[,i],main=names(fit_loglog2[[1]])[i])
+  abline(h=0,col="red")
+}
+```
+
+For the `COND` variable, at level 3, one observation appears to be influential, with a residual size of approximately $-0.6$. This observation will be removed from the dataset. For the model fitted on the reduced dataset, the diagnostic plots do not indicate any influential observations.
+ 
+```{r, include=FALSE}
+del <- which.min(residuals(fit_loglog2, type="dfbetas")[,3])
+dane6 <- dane5[-89,]
+```
+
+```{r, include=FALSE}
+fit_loglog3 <- survreg(Surv(TIME, STATUS)~COND + T_STAGE+N_STAGE, data = dane6, dist = 'loglogistic')
+```
+Final form of the model: 
+\begin{aligned}
+log(T) &= 6.73 -0.98\cdot X_{cond2} - 1.07\cdot X_{cond3} - 0.05\cdot X_{t_stage3} - 0.52\cdot X_{t_stage4} +\\
+& 0.06 \cdot X_{n_stage2} - 0.29 \cdot X_{n_stage4}+0.52 \varepsilon
+\end{aligned}
+
+# Summary
+
+The analysis of data from patients suffering from cancer of the oropharynx has led to the following conclusions:
+
+* The variable defining tumor size (`T_STAGE`) is a variable that showed an impact on the patient's survival probability at all three stages of analysis. This result is intuitive, as tumor size indicates the severity of the patient's condition.
+
+* Other variables that showed an impact on survival probability at least at one stage of the analysis include: the number of metastatic lymph nodes (`N_STAGE`), the patient's functional status (`COND`), and sex.
+
+* The resulting Cox model allows us to interpret the influence of sex and tumor size (for each functional status of the patient separately):
+
+  + For females, the hazard is 0.7 times lower than for males ($HR_{sex2} = exp(-0.356)$).
+
+  + For tumors larger than 3 cm, the hazard is 0.95 times lower than for other groups of the variable ($HR_{t_stage3} = exp(-0.045)$).
+
+  + For massive tumors with invasion into surrounding tissues, the hazard is 1.74 times higher than for other groups ($HR_{t_stage4} = exp(0.553)$).
+
+* The resulting AFT model allows us to interpret the influence of variables describing the patient's functional status, tumor size, and the number of metastatic lymph nodes:
+
+  + The survival time of patients shortens for those with limited work capacity and for those requiring care, with a greater shortening for the latter group.
+
+  + The survival time of patients shortens depending on tumor size, most significantly for those with massive tumors invading surrounding tissues (this matches the results from the Cox model).
+
+  + The survival time increases for patients with one metastatic lymph node compared to other categories, and it also increases for patients with multiple metastatic lymph nodes.
+
+  
