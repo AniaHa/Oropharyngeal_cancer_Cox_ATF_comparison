@@ -14,7 +14,7 @@ library(knitr)
 ```
 
 ```{r, include=FALSE}
-dane <- read.csv("E:/Studia/PW/II SEMESTR/Biostatystyka/projekty/5/pharynx.csv")
+dane <- read.csv("E:/Studia/PW/II SEMESTR/Biostatystyka/projekty/Proj 5/pharynx.csv")
 library(survminer)
 library(foreign)
 library(survival)
