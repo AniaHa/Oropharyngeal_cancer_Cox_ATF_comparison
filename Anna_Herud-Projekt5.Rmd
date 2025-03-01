@@ -41,7 +41,7 @@ sum(dane$STATUS==1) / nrow(dane)*100
 sum(dane$STATUS==0) / nrow(dane)*100
 ```
 
-Zmienne, których wpływ na czas przeżycia pacjentów chorych na raka, to:
+Zmienne, których wpływ na czas przeżycia pacjentów chorych na raka będzie rozważany, to:
 
 * `SEX`: płeć pacjenta (ok. $76\%$ mężczyzn i ok. $24\%$ kobiet)
 * `GRADE`: stopień zróżnicowania nowotworu (1 obserwacja nie zawierająca danych, dla pozostałych: ok. $26\%$ pacjentów o wysokim zróżnicowaniu nowotworu, ok. $56\%$ o średnim zróżnicowaniu oraz ok. $18\%$ procent o niskim stopniu zróżnicowania)
@@ -65,7 +65,7 @@ W pierwszej części zbadany zostanie wpływ zmiennych `SEX`, `N_STAGE` oraz `T_
 
 ### Wpływ płci na prawdopodobieństwo przeżycia
 
-W pierwszej kolejności zbadana zostanie zmienna `SEX` składająca się z dwóch poziomów. Na poniższym wykresie została przedstawiona funkjca prawdopodobieństwa przeżycia dla każdej płci osbno:
+W pierwszej kolejności zbadana zostanie zmienna `SEX` składająca się z dwóch poziomów. Na poniższym wykresie została przedstawiona funkcja prawdopodobieństwa przeżycia dla każdej płci osobno:
 
 ```{r, echo=FALSE, warning=FALSE, message=FALSE}
 result.s <- survfit(Surv(TIME, STATUS)~SEX, data = dane)
