@@ -1,0 +1,15 @@
+- SEX: gender of the patient (approx. 76% male and approx. 24% female)
+- GRADE: degree of tumour differentiation (1 observation with no data, for the others: approx. 26% of patients with
+high differentiation of the tumour, approx. 56% with medium differentiation and approx. 18% percent with low differentiation)
+- TX: treatment (approximately 51% of patients received radiotherapy and 49% of patients received radiotherapy and chemotherapy)
+- AGE: age in years at diagnosis
+- COND: patient's degree of function (2 observations do not contain data, for the others: approx. 74% of patients have no impairment
+functional impairment, approx. 22% have reduced functional impairment, approx. 3% of patients require partial care and 1 patient requires
+total care)
+- SITE: tumour location (for approx. 33% of patients the tumour is located on the palatal arch, similarly for the location of the
+tumour in the tonsillar fossa, about 34% of patients have a tumour in the epiglottis of the tongue)
+- T_STAGE: tumour size (approx. 5% of patients have a tumour of 2 cm or less, approx. 13% with a size of 2 - 4 cm, approx. 48%
+larger than 4 cm, and about 23% of patients have a massive tumour with pressure on surrounding tissues)
+- N_STAGE: lymph node metastases (20% of patients have no metastases, about 14% have one involved node smaller than 3
+cm - mobile, approx. 19% of patients have one involved node larger than 3 cm - mobile, approx. 47% of patients have several involved
+nodes)
